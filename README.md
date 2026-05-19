@@ -3,7 +3,7 @@
 ### 1. Клонирование и настройка
 
 ```bash
-git clone https://github.com/your-repo/hackhathon_max_bot.git
+git clone https://github.com/heckfy811/hackhathon_max_bot.git
 cd hackhathon_max_bot
 cp .env.example .env
 # Отредактируйте .env
