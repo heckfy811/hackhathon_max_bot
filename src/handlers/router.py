@@ -2,7 +2,7 @@ from maxapi import Dispatcher, F
 from maxapi.types import BotStarted, Command, MessageCreated
 from maxapi.types.callback import Callback
 
-import src.keyboards.kb as kb
+from ..keyboards import kb
 
 dp = Dispatcher()
 

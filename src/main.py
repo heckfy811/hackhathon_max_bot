@@ -5,7 +5,7 @@ import logging
 from maxapi import Bot, Router
 from dotenv import load_dotenv
 
-from router import dp
+from src.handlers.router import dp
 
 load_dotenv()
 
@@ -15,7 +15,7 @@ router = Router()
 
 async def main():
     #Инициализация бота
-    bot = Bot(token=os.getenv("TOKEN"))
+    bot = Bot(token=os.getenv("BOT_TOKEN"))
     #Подключение роутеров
     dp.include_routers(router)
 

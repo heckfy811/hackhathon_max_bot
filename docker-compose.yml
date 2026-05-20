@@ -44,8 +44,23 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
     command: alembic upgrade head
     restart: "no"
+
+  bot:
+    build: .
+    container_name: max_bot
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      DATABASE_URL: postgresql+asyncpg://max_bot_user:${USER_PASSWORD}@db:5432/${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
 volumes:
   postgres_data:

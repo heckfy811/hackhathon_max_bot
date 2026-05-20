@@ -14,4 +14,4 @@ COPY src/ ./src/
 COPY database/ ./database/
 COPY alembic.ini .
 
-CMD ["python", "src/main.py"]
+CMD ["python", "-m", "src.main"]
