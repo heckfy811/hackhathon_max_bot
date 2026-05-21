@@ -27,7 +27,6 @@ class Request(Base):
     status: Mapped[str] = mapped_column(String(50), server_default=text("draft"), nullable=False)
     admin_comment: Mapped[str] = mapped_column(Text, nullable=True)
     rejection_reason: Mapped[str] = mapped_column(String(100), nullable=True)
-    rejection_comment: Mapped[str] = mapped_column(Text, nullable=True)
     initiator_id: Mapped[str] = mapped_column(String(255), ForeignKey("bot_schema.users.max_user_id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("NOW()"), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("NOW()"), nullable=False)

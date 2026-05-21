@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: 782072431b0f
+Revision ID: 01b741b8098f
 Revises: 
-Create Date: 2026-05-21 15:28:23.954333
+Create Date: 2026-05-21 16:15:10.208049
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '782072431b0f'
+revision: str = '01b741b8098f'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -85,7 +85,6 @@ def upgrade() -> None:
     sa.Column('status', sa.String(length=50), server_default=sa.text("'draft'"), nullable=False),
     sa.Column('admin_comment', sa.Text(), nullable=True),
     sa.Column('rejection_reason', sa.String(length=100), nullable=True),
-    sa.Column('rejection_comment', sa.Text(), nullable=True),
     sa.Column('initiator_id', sa.String(length=255), nullable=False),
     sa.Column('created_at', sa.DateTime(), server_default=sa.text('NOW()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(), server_default=sa.text('NOW()'), nullable=False),
@@ -151,3 +150,4 @@ def downgrade() -> None:
     op.execute('DROP FUNCTION IF EXISTS update_answered_at()')
     op.execute('DROP FUNCTION IF EXISTS generate_short_id()')
     # ### end Alembic commands ###
+
