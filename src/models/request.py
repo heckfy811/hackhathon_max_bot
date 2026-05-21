@@ -1,31 +1,37 @@
-# src/models/request.py
-from sqlalchemy import String, DateTime, Text, ForeignKey, Enum
+from sqlalchemy import String, Date, DateTime, Text, ForeignKey, text, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from datetime import datetime
-import uuid
+from datetime import datetime, date
 from src.models import Base
+import uuid
 
 class Request(Base):
     __tablename__ = "requests"
+    __table_args__ = {"schema": "bot_schema"}
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    guest_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    visit_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    visit_time: Mapped[str] = mapped_column(String(50))
-    building: Mapped[str] = mapped_column(String(100))
-    purpose: Mapped[str] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(
-        Enum("pending", "approved", "rejected", "need_clarification", "closed", name="request_status")
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()")
     )
+    short_id: Mapped[str] = mapped_column(
+        String(20),
+        unique=True,
+        nullable=False,
+        server_default=text("generate_short_id()")
+    )
+    guest_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    visit_date: Mapped[date] = mapped_column(Date, nullable=True)
+    visit_time: Mapped[str] = mapped_column(String(50), nullable=True)
+    location: Mapped[str] = mapped_column(String(255), nullable=True)
+    purpose: Mapped[str] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), server_default=text("draft"), nullable=False)
     admin_comment: Mapped[str] = mapped_column(Text, nullable=True)
-    clarification_question: Mapped[str] = mapped_column(Text, nullable=True)
-    clarification_answer: Mapped[str] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+    rejection_reason: Mapped[str] = mapped_column(String(100), nullable=True)
+    rejection_comment: Mapped[str] = mapped_column(Text, nullable=True)
+    initiator_id: Mapped[str] = mapped_column(String(255), ForeignKey("bot_schema.users.max_user_id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("NOW()"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("NOW()"), nullable=False)
 
-    # Внешние ключи
-    initiator_id: Mapped[str] = mapped_column(String(255), ForeignKey("bot_schema.users.max_user_id"))
-
-    # Связи (используем строки для отложенной загрузки)
-    initiator: Mapped["User"] = relationship(back_populates="requests", foreign_keys=[initiator_id])
+    initiator: Mapped["User"] = relationship(back_populates="requests")
+    clarifications: Mapped[list["Clarification"]] = relationship(back_populates="request")
     audit_logs: Mapped[list["AuditLog"]] = relationship(back_populates="request")
