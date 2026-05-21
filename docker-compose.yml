@@ -11,7 +11,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}" ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -31,21 +31,24 @@ services:
       USER_PASSWORD: ${USER_PASSWORD}
     volumes:
       - ./database/init.sh:/init.sh
-      - ./database/01-init-db.sql:/init.sql
     command: sh -c "chmod +x /init.sh && /init.sh"
     restart: "no"
+    healthcheck:
+      test: [ "CMD-SHELL", "psql -h db -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c 'SELECT 1 FROM pg_roles WHERE rolname=''max_bot_admin''' | grep -q 1" ]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   migrations:
     build: .
     container_name: max_bot_db_migrations
-    environment:
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      DATABASE_URL: postgresql+psycopg2://max_bot_admin:${ADMIN_PASSWORD}@db:5432/${POSTGRES_DB}
     depends_on:
-      db:
-        condition: service_healthy
       init-db:
         condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql+psycopg2://max_bot_admin:${ADMIN_PASSWORD}@db:5432/${POSTGRES_DB}
+    volumes:
+      - ./database/migrations:/app/database/migrations
     command: alembic upgrade head
     restart: "no"
 
@@ -56,10 +59,8 @@ services:
       BOT_TOKEN: ${BOT_TOKEN}
       DATABASE_URL: postgresql+asyncpg://max_bot_user:${USER_PASSWORD}@db:5432/${POSTGRES_DB}
     depends_on:
-      db:
+      init-db:
         condition: service_healthy
-      migrations:
-        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:

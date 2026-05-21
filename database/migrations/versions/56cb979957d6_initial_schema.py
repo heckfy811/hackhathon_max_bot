@@ -1,8 +1,8 @@
 """initial_schema
 
-Revision ID: 01b741b8098f
+Revision ID: 56cb979957d6
 Revises: 
-Create Date: 2026-05-21 16:15:10.208049
+Create Date: 2026-05-21 17:42:52.292856
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '01b741b8098f'
+revision: str = '56cb979957d6'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -24,44 +24,44 @@ def upgrade() -> None:
     op.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto"')
 
     op.execute("""
-                CREATE OR REPLACE FUNCTION generate_short_id()
-                RETURNS TEXT AS $$
-                DECLARE
-                    chars TEXT := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-                    result TEXT := '';
-                    i INTEGER := 0;
-                    byte BYTEA;
+                    CREATE OR REPLACE FUNCTION generate_short_id()
+                    RETURNS TEXT AS $$
+                    DECLARE
+                        chars TEXT := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                        result TEXT := '';
+                        i INTEGER := 0;
+                        byte BYTEA;
+                    BEGIN
+                        byte := gen_random_bytes(10);
+                        FOR i IN 1..10 LOOP
+                            result := result || substr(chars, (get_byte(byte, i-1) % 36) + 1, 1);
+                        END LOOP;
+                        RETURN 'REQ-' || result;
+                    END;
+                    $$ LANGUAGE plpgsql VOLATILE;
+                    """)
+
+    op.execute("""
+                CREATE OR REPLACE FUNCTION update_updated_at_column()
+                RETURNS TRIGGER AS $$
                 BEGIN
-                    byte := gen_random_bytes(10);
-                    FOR i IN 1..10 LOOP
-                        result := result || substr(chars, (get_byte(byte, i-1) % 36) + 1, 1);
-                    END LOOP;
-                    RETURN 'REQ-' || result;
+                    NEW.updated_at = NOW();
+                    RETURN NEW;
                 END;
-                $$ LANGUAGE plpgsql VOLATILE;
+                $$ LANGUAGE plpgsql;
                 """)
 
     op.execute("""
-            CREATE OR REPLACE FUNCTION update_updated_at_column()
-            RETURNS TRIGGER AS $$
-            BEGIN
-                NEW.updated_at = NOW();
-                RETURN NEW;
-            END;
-            $$ LANGUAGE plpgsql;
-            """)
-
-    op.execute("""
-            CREATE OR REPLACE FUNCTION update_answered_at()
-            RETURNS TRIGGER AS $$
-            BEGIN
-                IF NEW.answer IS NOT NULL AND OLD.answer IS NULL THEN
-                    NEW.answered_at = NOW();
-                END IF;
-                RETURN NEW;
-            END;
-            $$ LANGUAGE plpgsql;
-            """)
+                CREATE OR REPLACE FUNCTION update_answered_at()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    IF NEW.answer IS NOT NULL AND OLD.answer IS NULL THEN
+                        NEW.answered_at = NOW();
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+                """)
 
     op.create_table('users',
     sa.Column('max_user_id', sa.String(length=255), nullable=False),
@@ -94,12 +94,11 @@ def upgrade() -> None:
     schema='bot_schema'
     )
     op.execute("""
-                CREATE TRIGGER trigger_update_requests_updated_at
-                    BEFORE UPDATE ON bot_schema.requests
-                    FOR EACH ROW
-                    EXECUTE FUNCTION update_updated_at_column();
-                """)
-
+                    CREATE TRIGGER trigger_update_requests_updated_at
+                        BEFORE UPDATE ON bot_schema.requests
+                        FOR EACH ROW
+                        EXECUTE FUNCTION update_updated_at_column();
+                    """)
     op.create_table('audit_log',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('request_id', sa.UUID(), nullable=False),
@@ -113,7 +112,7 @@ def upgrade() -> None:
     schema='bot_schema'
     )
     op.create_table('clarifications',
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('id', sa.UUID(), server_default=sa.text('gen_random_uuid()'), nullable=False),
     sa.Column('request_id', sa.UUID(), nullable=False),
     sa.Column('question', sa.Text(), nullable=False),
     sa.Column('answer', sa.Text(), nullable=True),
@@ -127,16 +126,17 @@ def upgrade() -> None:
     schema='bot_schema'
     )
     op.execute("""
-                CREATE TRIGGER trigger_update_clarifications_answered_at
-                    BEFORE UPDATE ON bot_schema.clarifications
-                    FOR EACH ROW
-                    EXECUTE FUNCTION update_answered_at();
-                """)
+                    CREATE TRIGGER trigger_update_clarifications_answered_at
+                        BEFORE UPDATE ON bot_schema.clarifications
+                        FOR EACH ROW
+                        EXECUTE FUNCTION update_answered_at();
+                    """)
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     """Downgrade schema."""
+    # ### commands auto generated by Alembic - please adjust! ###
     # ### commands auto generated by Alembic - please adjust! ###
     op.execute('DROP TRIGGER IF EXISTS trigger_update_requests_updated_at ON bot_schema.requests')
     op.execute('DROP TRIGGER IF EXISTS trigger_update_clarifications_answered_at ON bot_schema.clarifications')
@@ -150,4 +150,3 @@ def downgrade() -> None:
     op.execute('DROP FUNCTION IF EXISTS update_answered_at()')
     op.execute('DROP FUNCTION IF EXISTS generate_short_id()')
     # ### end Alembic commands ###
-

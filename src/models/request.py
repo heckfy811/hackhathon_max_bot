@@ -24,7 +24,7 @@ class Request(Base):
     visit_time: Mapped[str] = mapped_column(String(50), nullable=True)
     location: Mapped[str] = mapped_column(String(255), nullable=True)
     purpose: Mapped[str] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String(50), server_default=text("draft"), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), server_default=text("'draft'"), nullable=False)
     admin_comment: Mapped[str] = mapped_column(Text, nullable=True)
     rejection_reason: Mapped[str] = mapped_column(String(100), nullable=True)
     initiator_id: Mapped[str] = mapped_column(String(255), ForeignKey("bot_schema.users.max_user_id"), nullable=False)

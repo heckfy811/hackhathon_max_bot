@@ -1,36 +1,24 @@
 import os
-import sys
-from pathlib import Path
 from logging.config import fileConfig
-
 from sqlalchemy import engine_from_config, pool
 from alembic import context
+from pathlib import Path
 
+import sys
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from src.models import Base
-
-try:
-    from dotenv import load_dotenv
-    env_path = Path(__file__).parent.parent.parent / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-except ImportError:
-    pass
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-url = config.get_main_option("sqlalchemy.url")
-if url:
-    import re
-    def replace_env_var(match):
-        var_name = match.group(1)
-        return os.getenv(var_name, match.group(0))
-    url = re.sub(r'\$\{([^}]+)\}', replace_env_var, url)
-    config.set_main_option("sqlalchemy.url", url)
+database_url = os.getenv("DATABASE_URL")
+if not database_url:
+    raise ValueError("DATABASE_URL environment variable is not set")
+
+config.set_main_option("sqlalchemy.url", database_url)
 
 target_metadata = Base.metadata
 
