@@ -31,7 +31,7 @@ services:
       USER_PASSWORD: ${USER_PASSWORD}
     volumes:
       - ./database/init.sh:/init.sh
-    command: sh -c "chmod +x /init.sh && /init.sh"
+    command: sh -c "chmod +x /init.sh && bash /init.sh"
     restart: "no"
     healthcheck:
       test: [ "CMD-SHELL", "psql -h db -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c 'SELECT 1 FROM pg_roles WHERE rolname=''max_bot_admin''' | grep -q 1" ]
@@ -60,7 +60,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://max_bot_user:${USER_PASSWORD}@db:5432/${POSTGRES_DB}
     depends_on:
       init-db:
-        condition: service_healthy
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:

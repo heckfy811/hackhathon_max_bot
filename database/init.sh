@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 echo "Waiting for PostgreSQL..."
 while ! pg_isready -h db -U ${POSTGRES_USER}; do
