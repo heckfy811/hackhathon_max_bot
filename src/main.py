@@ -6,7 +6,7 @@ from maxapi import Bot, Router
 from dotenv import load_dotenv
 from sqlalchemy import text as sa_text
 
-from src.handlers.router import dp
+from src.handlers.dp import dp
 from src.database.db import engine
 
 load_dotenv()
