@@ -5,7 +5,10 @@ from maxapi.context import MemoryContext, State, StatesGroup
 
 
 from ..keyboards import kb
-from .common import _get_user_service, _get_request_service, _get_audit_service, _format_request_short, _format_request_full
+from .common import (
+    _get_request_service, _get_audit_service,
+    _get_clarification_service, _format_request_short,
+)
 
 router = Router()
 
@@ -35,56 +38,6 @@ async def admin_requests(callback: Callback):
         "\n".join(lines),
         attachments=[kb.requests_list_kb(requests, back_payload="start")]
     )
-
-
-# ── Просмотр конкретной заявки ────────────────────────────────────────────────
-
-@router.message_callback(F.callback.payload.startswith("view_request:"))
-async def view_request(callback: Callback, context: MemoryContext):
-    """Просмотр конкретной заявки. Показывает действия в зависимости от роли."""
-    payload = callback.callback.payload
-    short_id = payload.split(":", 1)[1]
-
-    user = callback.callback.user
-    user_id = str(user.user_id)
-
-    service_r, session_r = _get_request_service()
-    async with session_r:
-        req = await service_r.get_by_short_id(short_id)
-
-    if not req:
-        await callback.message.answer("⚠️ Заявка не найдена.", attachments=[kb.user_menu_kb])
-        return
-
-    text = _format_request_full(req)
-
-    # Определяем роль пользователя
-    service_u, session_u = _get_user_service()
-    async with session_u:
-        db_user = await service_u.get(user_id)
-    role = db_user.role if db_user else "user"
-
-    if role == "admin":
-        # Админ видит действия только для pending-заявок
-        if req.status == "pending":
-            await callback.message.answer(
-                text, attachments=[kb.admin_request_actions_kb(short_id)]
-            )
-        else:
-            await callback.message.answer(
-                text, attachments=[kb.admin_menu_kb]
-            )
-    else:
-        # Пользователь может отменить только pending-заявку
-        if req.status == "pending":
-            await callback.message.answer(
-                text, attachments=[kb.user_request_actions_kb(short_id)]
-            )
-        else:
-            await callback.message.answer(
-                text, attachments=[kb.user_menu_kb]
-            )
-
 
 
 # ── FSM-состояния для действий админа ─────────────────────────────────────────
@@ -190,7 +143,7 @@ async def admin_ask_start(callback: Callback, context: MemoryContext):
 
 @router.message_created(AdminAction.ask_question)
 async def admin_ask_question(event: MessageCreated, context: MemoryContext):
-    """Обработка ввода вопроса от админа (заглушка — сохраняет в admin_comment)."""
+    """Обработка ввода вопроса от админа — сохраняет в clarifications."""
     question = event.message.body.text.strip()
     if not question:
         await event.message.answer("⚠️ Вопрос не может быть пустым. Введите вопрос:")
@@ -200,27 +153,33 @@ async def admin_ask_question(event: MessageCreated, context: MemoryContext):
     short_id = data.get("action_short_id")
     user_id = str(event.message.sender.user_id)
 
-    service, session = _get_request_service()
-    async with session:
-        req = await service.get_by_short_id(short_id)
+    service_r, session_r = _get_request_service()
+    async with session_r:
+        req = await service_r.get_by_short_id(short_id)
         if not req:
             await event.message.answer("⚠️ Заявка не найдена.", attachments=[kb.admin_menu_kb])
             await context.clear()
             return
 
-        # Сохраняем вопрос в admin_comment и меняем статус
-        req.admin_comment = question
-        req.status = "need_clarification"
-        await session.commit()
+    # Создаём запись уточнения через ClarificationService
+    service_c, session_c = _get_clarification_service()
+    async with session_c:
+        try:
+            await service_c.ask(str(req.id), user_id, question)
+        except ValueError as e:
+            await event.message.answer(f"⚠️ Ошибка: {e}", attachments=[kb.admin_menu_kb])
+            await context.clear()
+            return
 
-        service_a, session_a = _get_audit_service()
-        async with session_a:
-            await service_a.log(req.id, "clarify", user_id, details=question)
+    # Запись в аудит-лог
+    service_a, session_a = _get_audit_service()
+    async with session_a:
+        await service_a.log(req.id, "clarify", user_id, details=question)
 
-        await event.message.answer(
-            f"❓ Вопрос по заявке {short_id} отправлен инициатору.\n"
-            f"Вопрос: {question}",
-            attachments=[kb.admin_menu_kb]
-        )
+    await event.message.answer(
+        f"❓ Вопрос по заявке {short_id} отправлен инициатору.\n"
+        f"Вопрос: {question}",
+        attachments=[kb.admin_menu_kb]
+    )
 
     await context.clear()

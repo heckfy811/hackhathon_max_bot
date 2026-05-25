@@ -2,18 +2,15 @@
 Общие утилиты для хендлеров: хелперы, форматирование, константы.
 """
 
-import logging
-import uuid
-
 from ..database.db import AsyncSessionFactory
 from ..repositories.audit_repo import AuditRepository
+from ..repositories.clarification_repo import ClarificationRepository
 from ..repositories.request_repo import RequestRepository
 from ..repositories.user_repo import UserRepository
 from ..services.audit_service import AuditService
+from ..services.clarification_service import ClarificationService
 from ..services.request_service import RequestService
 from ..services.user_service import UserService
-
-logger = logging.getLogger(__name__)
 
 
 # Версия согласия — обновлять при изменении текста/файла согласия
@@ -58,6 +55,14 @@ def _get_audit_service() -> tuple[AuditService, object]:
     return AuditService(repo), session
 
 
+def _get_clarification_service() -> tuple[ClarificationService, object]:
+    """Хелпер для создания ClarificationService с новой сессией."""
+    session = AsyncSessionFactory()
+    clar_repo = ClarificationRepository(session)
+    request_repo = RequestRepository(session)
+    return ClarificationService(clar_repo, request_repo), session
+
+
 def _format_request_short(req) -> str:
     """Краткая информация о заявке для списка."""
     status = STATUS_LABELS.get(req.status, req.status)
@@ -67,8 +72,8 @@ def _format_request_short(req) -> str:
     )
 
 
-def _format_request_full(req) -> str:
-    """Полная информация о заявке."""
+async def _format_request_full(req) -> str:
+    """Полная информация о заявке, включая историю уточнений."""
     status = STATUS_LABELS.get(req.status, req.status)
     text = (
         f"📄 Заявка {req.short_id}\n"
@@ -84,6 +89,22 @@ def _format_request_full(req) -> str:
         text += f"\n💬 Комментарий админа: {req.admin_comment}\n"
     if req.rejection_reason:
         text += f"\n❌ Причина отказа: {req.rejection_reason}\n"
+
+    # История уточнений
+    service_c, session_c = _get_clarification_service()
+    async with session_c:
+        history = await service_c.get_history(str(req.id))
+
+    if history:
+        text += "\n💬 История уточнений:\n"
+        text += "───────────────────\n"
+        for i, clar in enumerate(history, 1):
+            text += f"  {i}. ❓ Вопрос: {clar.question}\n"
+            if clar.answer:
+                text += f"     ✏️ Ответ: {clar.answer}\n"
+            else:
+                text += "     ⏳ Ожидает ответа\n"
+
     return text
 
 

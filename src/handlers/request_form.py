@@ -8,7 +8,7 @@ from maxapi.types.callback import Callback
 from maxapi.context import MemoryContext, State, StatesGroup
 
 from ..keyboards import kb
-from .common import _get_request_service, _format_summary, _get_audit_service
+from .common import _get_user_service, _get_request_service, _get_clarification_service, _get_audit_service, _format_summary, _format_request_full
 
 router = Router()
 
@@ -228,3 +228,61 @@ async def confirm_request(callback: Callback, context: MemoryContext):
         "Вы получите уведомление о решении.",
         attachments=[kb.user_menu_kb]
     )
+
+# ── Просмотр конкретной заявки ────────────────────────────────────────────────
+
+@router.message_callback(F.callback.payload.startswith("view_request:"))
+async def view_request(callback: Callback, context: MemoryContext):
+    """Просмотр конкретной заявки. Показывает действия в зависимости от роли."""
+    payload = callback.callback.payload
+    short_id = payload.split(":", 1)[1]
+
+    user = callback.callback.user
+    user_id = str(user.user_id)
+
+    service_r, session_r = _get_request_service()
+    async with session_r:
+        req = await service_r.get_by_short_id(short_id)
+
+    if not req:
+        await callback.message.answer("⚠️ Заявка не найдена.", attachments=[kb.user_menu_kb])
+        return
+
+    text = await _format_request_full(req)
+
+    # Определяем роль пользователя
+    service_u, session_u = _get_user_service()
+    async with session_u:
+        db_user = await service_u.get(user_id)
+    role = db_user.role if db_user else "user"
+
+    if role == "admin":
+        # Админ видит действия только для pending-заявок
+        if req.status == "pending":
+            await callback.message.answer(
+                text, attachments=[kb.admin_request_actions_kb(short_id)]
+            )
+        else:
+            await callback.message.answer(
+                text, attachments=[kb.admin_menu_kb]
+            )
+    else:
+        # Пользователь может отменить только pending-заявку
+        if req.status == "pending":
+            await callback.message.answer(
+                text, attachments=[kb.user_request_actions_kb(short_id)]
+            )
+        elif req.status == "need_clarification":
+            # Показываем вопрос админа и кнопку ответа
+            service_c, session_c = _get_clarification_service()
+            async with session_c:
+                active_clar = await service_c.get_active_by_request(str(req.id))
+            if active_clar:
+                text += f"\n❓ Вопрос от администратора:\n{active_clar.question}\n"
+            await callback.message.answer(
+                text, attachments=[kb.user_clarification_kb(short_id)]
+            )
+        else:
+            await callback.message.answer(
+                text, attachments=[kb.user_menu_kb]
+            )

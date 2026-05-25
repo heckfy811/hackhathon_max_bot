@@ -1,11 +1,21 @@
 from maxapi import Router, F
+from maxapi.types import MessageCreated
 from maxapi.types.callback import Callback
-from maxapi.context import MemoryContext
+from maxapi.context import MemoryContext, State, StatesGroup
 
 from ..keyboards import kb
-from .common import _get_user_service, _get_request_service, _get_audit_service, _format_request_short, _format_request_full
+from .common import (
+    _get_request_service, _get_audit_service,
+    _get_clarification_service, _format_request_short,
+)
 
 router = Router()
+
+
+# ── FSM-состояния для ответа на уточнение ─────────────────────────────────────
+
+class UserClarification(StatesGroup):
+    answer = State()
 
 @router.message_callback(F.callback.payload == "my_requests")
 async def my_requests(callback: Callback):
@@ -34,53 +44,6 @@ async def my_requests(callback: Callback):
         "\n".join(lines),
         attachments=[kb.requests_list_kb(requests, back_payload="start")]
     )
-# ── Просмотр конкретной заявки ────────────────────────────────────────────────
-
-@router.message_callback(F.callback.payload.startswith("view_request:"))
-async def view_request(callback: Callback, context: MemoryContext):
-    """Просмотр конкретной заявки. Показывает действия в зависимости от роли."""
-    payload = callback.callback.payload
-    short_id = payload.split(":", 1)[1]
-
-    user = callback.callback.user
-    user_id = str(user.user_id)
-
-    service_r, session_r = _get_request_service()
-    async with session_r:
-        req = await service_r.get_by_short_id(short_id)
-
-    if not req:
-        await callback.message.answer("⚠️ Заявка не найдена.", attachments=[kb.user_menu_kb])
-        return
-
-    text = _format_request_full(req)
-
-    # Определяем роль пользователя
-    service_u, session_u = _get_user_service()
-    async with session_u:
-        db_user = await service_u.get(user_id)
-    role = db_user.role if db_user else "user"
-
-    if role == "admin":
-        # Админ видит действия только для pending-заявок
-        if req.status == "pending":
-            await callback.message.answer(
-                text, attachments=[kb.admin_request_actions_kb(short_id)]
-            )
-        else:
-            await callback.message.answer(
-                text, attachments=[kb.admin_menu_kb]
-            )
-    else:
-        # Пользователь может отменить только pending-заявку
-        if req.status == "pending":
-            await callback.message.answer(
-                text, attachments=[kb.user_request_actions_kb(short_id)]
-            )
-        else:
-            await callback.message.answer(
-                text, attachments=[kb.user_menu_kb]
-            )
 
 
 # ── Действия пользователя ────────────────────────────────────────────────────
@@ -115,3 +78,96 @@ async def user_cancel_request(callback: Callback):
                 f"⚠️ Не удалось отменить: {e}",
                 attachments=[kb.user_menu_kb]
             )
+
+
+# ── Ответ на уточняющий вопрос от админа ─────────────────────────────────────
+
+@router.message_callback(F.callback.payload.startswith("answer_clarification:"))
+async def user_answer_clarification_start(callback: Callback, context: MemoryContext):
+    """Пользователь начинает отвечать на вопрос админа."""
+    payload = callback.callback.payload
+    short_id = payload.split(":", 1)[1]
+
+    # Проверяем, что заявка в нужном статусе
+    service_r, session_r = _get_request_service()
+    async with session_r:
+        req = await service_r.get_by_short_id(short_id)
+
+    if not req:
+        await callback.message.answer("⚠️ Заявка не найдена.", attachments=[kb.user_menu_kb])
+        return
+
+    if req.status != "need_clarification":
+        await callback.message.answer(
+            "⚠️ Эта заявка не требует уточнения.",
+            attachments=[kb.user_menu_kb]
+        )
+        return
+
+    # Получаем активный вопрос
+    service_c, session_c = _get_clarification_service()
+    async with session_c:
+        active_clar = await service_c.get_active_by_request(str(req.id))
+
+    if not active_clar:
+        await callback.message.answer(
+            "⚠️ Нет активного вопроса по этой заявке.",
+            attachments=[kb.user_menu_kb]
+        )
+        return
+
+    await context.update_data(
+        clarification_id=str(active_clar.id),
+        action_short_id=short_id,
+    )
+    await context.set_state(UserClarification.answer)
+    await callback.message.answer(
+        f"❓ Вопрос от администратора:\n{active_clar.question}\n\n"
+        "✏️ Введите ваш ответ:",
+        attachments=[kb.cancel_kb]
+    )
+
+
+@router.message_created(UserClarification.answer)
+async def user_answer_clarification(event: MessageCreated, context: MemoryContext):
+    """Обработка ответа пользователя на уточняющий вопрос."""
+    answer_text = event.message.body.text.strip()
+    if not answer_text:
+        await event.message.answer("⚠️ Ответ не может быть пустым. Введите ответ:")
+        return
+
+    data = await context.get_data()
+    clarification_id = data.get("clarification_id")
+    short_id = data.get("action_short_id")
+    user_id = str(event.message.sender.user_id)
+
+    service_c, session_c = _get_clarification_service()
+    async with session_c:
+        try:
+            await service_c.answer(clarification_id, answer_text)
+        except ValueError as e:
+            await event.message.answer(
+                f"⚠️ Ошибка: {e}",
+                attachments=[kb.user_menu_kb]
+            )
+            await context.clear()
+            return
+
+    # Запись в аудит-лог
+    service_r, session_r = _get_request_service()
+    async with session_r:
+        req = await service_r.get_by_short_id(short_id)
+
+    if req:
+        service_a, session_a = _get_audit_service()
+        async with session_a:
+            await service_a.log(
+                req.id, "answer_clarification", user_id, details=answer_text
+            )
+
+    await context.clear()
+    await event.message.answer(
+        f"✅ Ответ по заявке {short_id} отправлен.\n"
+        "Заявка возвращена на рассмотрение администратору.",
+        attachments=[kb.user_menu_kb]
+    )
