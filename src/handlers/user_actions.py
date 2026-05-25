@@ -3,7 +3,7 @@ from maxapi.types.callback import Callback
 from maxapi.context import MemoryContext
 
 from ..keyboards import kb
-from .common import _get_user_service, _get_request_service, _format_request_short, _format_request_full
+from .common import _get_user_service, _get_request_service, _get_audit_service, _format_request_short, _format_request_full
 
 router = Router()
 
@@ -85,20 +85,27 @@ async def view_request(callback: Callback, context: MemoryContext):
 
 # ── Действия пользователя ────────────────────────────────────────────────────
 
-@router.message_callback(F.callback.payload.startswith("user_cancel:"))
+@router.message_callback(F.callback.payload.startswith("cancel:"))
 async def user_cancel_request(callback: Callback):
     """Пользователь отменяет свою заявку."""
-    payload = callback.callback.payload
-    short_id = payload.split(":", 1)[1]
+    user = callback.callback.user
+    user_id = str(user.user_id)
 
-    service, session = _get_request_service()
-    async with session:
-        req = await service.get_by_short_id(short_id)
+    payload = callback.callback.payload.split(":", 1)
+    action = payload[0]
+    short_id = payload[1]
+
+    service_r, session_r = _get_request_service()
+    async with session_r:
+        req = await service_r.get_by_short_id(short_id)
         if not req:
             await callback.message.answer("⚠️ Заявка не найдена.", attachments=[kb.user_menu_kb])
             return
         try:
-            await service.cancel(str(req.id))
+            await service_r.cancel(str(req.id))
+            service_a, session_a = _get_audit_service()
+            async with session_a:
+                await service_a.log(req.id, action, user_id)
             await callback.message.answer(
                 f"🚫 Заявка {short_id} отменена.",
                 attachments=[kb.user_menu_kb]

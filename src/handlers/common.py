@@ -2,11 +2,18 @@
 Общие утилиты для хендлеров: хелперы, форматирование, константы.
 """
 
+import logging
+import uuid
+
 from ..database.db import AsyncSessionFactory
+from ..repositories.audit_repo import AuditRepository
 from ..repositories.request_repo import RequestRepository
 from ..repositories.user_repo import UserRepository
+from ..services.audit_service import AuditService
 from ..services.request_service import RequestService
 from ..services.user_service import UserService
+
+logger = logging.getLogger(__name__)
 
 
 # Версия согласия — обновлять при изменении текста/файла согласия
@@ -42,6 +49,13 @@ def _get_user_service() -> tuple[UserService, object]:
     session = AsyncSessionFactory()
     repo = UserRepository(session)
     return UserService(repo), session
+
+
+def _get_audit_service() -> tuple[AuditService, object]:
+    """Хелпер для создания AuditService с новой сессией."""
+    session = AsyncSessionFactory()
+    repo = AuditRepository(session)
+    return AuditService(repo), session
 
 
 def _format_request_short(req) -> str:

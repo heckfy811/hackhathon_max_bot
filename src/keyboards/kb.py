@@ -78,7 +78,7 @@ confirm_request_kb = (
     .row(
         CallbackButton(
             text="✅ Отправить заявку",
-            payload="confirm_request"
+            payload="submit"
         )
     )
     .row(
@@ -116,7 +116,7 @@ def user_request_actions_kb(short_id: str):
         .row(
             CallbackButton(
                 text="🚫 Отменить заявку",
-                payload=f"user_cancel:{short_id}"
+                payload=f"cancel:{short_id}"
             )
         )
         .row(
@@ -133,19 +133,19 @@ def admin_request_actions_kb(short_id: str):
         .row(
             CallbackButton(
                 text="✅ Одобрить",
-                payload=f"admin_approve:{short_id}"
+                payload=f"approve:{short_id}"
             )
         )
         .row(
             CallbackButton(
                 text="❌ Отклонить",
-                payload=f"admin_reject:{short_id}"
+                payload=f"reject:{short_id}"
             )
         )
         .row(
             CallbackButton(
                 text="❓ Задать вопрос",
-                payload=f"admin_ask:{short_id}"
+                payload=f"clarify:{short_id}"
             )
         )
         .row(

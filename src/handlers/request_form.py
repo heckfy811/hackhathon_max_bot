@@ -8,7 +8,7 @@ from maxapi.types.callback import Callback
 from maxapi.context import MemoryContext, State, StatesGroup
 
 from ..keyboards import kb
-from .common import _get_request_service, _format_summary
+from .common import _get_request_service, _format_summary, _get_audit_service
 
 router = Router()
 
@@ -197,16 +197,23 @@ async def process_purpose(event: MessageCreated, context: MemoryContext):
     )
 
 
-@router.message_callback(F.callback.payload == "confirm_request", RequestForm.confirm)
+@router.message_callback(F.callback.payload == "submit", RequestForm.confirm)
 async def confirm_request(callback: Callback, context: MemoryContext):
     """Подтверждение и отправка заявки — статус меняется на pending."""
     data = await context.get_data()
     request_id = data.get("request_id")
 
-    service, session = _get_request_service()
-    async with session:
+    user = callback.callback.user
+    user_id = str(user.user_id)
+    payload = callback.callback.payload
+
+    service_r, session_r = _get_request_service()
+    async with session_r:
         try:
-            await service.submit(request_id)
+            await service_r.submit(request_id)
+            service_a, session_a = _get_audit_service()
+            async with session_a:
+                await service_a.log(request_id, payload, user_id)
         except ValueError as e:
             await callback.message.answer(
                 f"⚠️ Не удалось отправить заявку: {e}",

@@ -1,15 +1,16 @@
-from typing import Callable, Awaitable
-from maxapi.types import Update, CallbackQuery
+from typing import Any
+from maxapi.types import Callback
+from maxapi.types.updates.message_callback import MessageCallback
+from maxapi.filters.middleware import BaseMiddleware, HandlerCallable
 
 from src.repositories.clarification_repo import ClarificationRepository
 from src.services.audit_service import AuditService
 from src.repositories.audit_repo import AuditRepository
 from src.repositories.request_repo import RequestRepository
-from sqlalchemy.ext.asyncio import AsyncSession
 import re
 
 
-class AuditMiddleware:
+class AuditMiddleware(BaseMiddleware):
     AUDITABLE_ACTIONS = {
         r'^approve:(.+)$': 'approved',
         r'^reject:(.+)$': 'rejected',
@@ -24,17 +25,20 @@ class AuditMiddleware:
 
     async def __call__(
             self,
-            update: Update,
-            handler: Callable[[Update], Awaitable[None]]
-    ):
-        result = await handler(update)
-        if update.callback_query:
-            await self._audit_callback(update.callback_query)
+            handler: HandlerCallable,
+            event_object: Any,
+            data: dict[str, Any],
+    ) -> Any:
+        result = await handler(event_object, data)
+
+        # Аудит только для MessageCallback событий
+        if isinstance(event_object, MessageCallback) and event_object.callback:
+            await self._audit_callback(event_object.callback)
 
         return result
 
-    async def _audit_callback(self, callback: CallbackQuery):
-        data = callback.data
+    async def _audit_callback(self, callback: Callback):
+        data = callback.payload
 
         for pattern, action in self.AUDITABLE_ACTIONS.items():
             match = re.match(pattern, data)

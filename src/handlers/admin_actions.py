@@ -5,9 +5,11 @@ from maxapi.context import MemoryContext, State, StatesGroup
 
 
 from ..keyboards import kb
-from .common import _get_user_service, _get_request_service, _format_request_short, _format_request_full
+from .common import _get_user_service, _get_request_service, _get_audit_service, _format_request_short, _format_request_full
 
 router = Router()
+
+
 # ── Заявки пользователей (админ) ─────────────────────────────────────────────
 
 @router.message_callback(F.callback.payload == "admin_requests")
@@ -90,20 +92,27 @@ class AdminAction(StatesGroup):
     reject_reason = State()
     ask_question = State()
 
-@router.message_callback(F.callback.payload.startswith("admin_approve:"))
+@router.message_callback(F.callback.payload.startswith("approve:"))
 async def admin_approve_request(callback: Callback):
     """Админ одобряет заявку."""
-    payload = callback.callback.payload
-    short_id = payload.split(":", 1)[1]
+    user = callback.callback.user
+    user_id = str(user.user_id)
 
-    service, session = _get_request_service()
-    async with session:
-        req = await service.get_by_short_id(short_id)
+    payload = callback.callback.payload.split(":", 1)
+    action = payload[0]
+    short_id = payload[1]
+
+    service_r, session_r = _get_request_service()
+    async with session_r:
+        req = await service_r.get_by_short_id(short_id)
         if not req:
             await callback.message.answer("⚠️ Заявка не найдена.", attachments=[kb.admin_menu_kb])
             return
         try:
-            await service.approve(str(req.id))
+            await service_r.approve(str(req.id))
+            service_a, session_a = _get_audit_service()
+            async with session_a:
+                await service_a.log(req.id, action, user_id)
             await callback.message.answer(
                 f"✅ Заявка {short_id} одобрена.",
                 attachments=[kb.admin_menu_kb]
@@ -115,7 +124,7 @@ async def admin_approve_request(callback: Callback):
             )
 
 
-@router.message_callback(F.callback.payload.startswith("admin_reject:"))
+@router.message_callback(F.callback.payload.startswith("reject:"))
 async def admin_reject_start(callback: Callback, context: MemoryContext):
     """Админ начинает отклонение — запрашиваем причину."""
     payload = callback.callback.payload
@@ -140,6 +149,7 @@ async def admin_reject_reason(event: MessageCreated, context: MemoryContext):
 
     data = await context.get_data()
     short_id = data.get("action_short_id")
+    user_id = str(event.message.sender.user_id)
 
     service, session = _get_request_service()
     async with session:
@@ -150,6 +160,9 @@ async def admin_reject_reason(event: MessageCreated, context: MemoryContext):
             return
         try:
             await service.reject(str(req.id), reason=reason)
+            service_a, session_a = _get_audit_service()
+            async with session_a:
+                await service_a.log(req.id, "reject", user_id, details=reason)
             await event.message.answer(
                 f"❌ Заявка {short_id} отклонена.\nПричина: {reason}",
                 attachments=[kb.admin_menu_kb]
@@ -160,7 +173,7 @@ async def admin_reject_reason(event: MessageCreated, context: MemoryContext):
     await context.clear()
 
 
-@router.message_callback(F.callback.payload.startswith("admin_ask:"))
+@router.message_callback(F.callback.payload.startswith("clarify:"))
 async def admin_ask_start(callback: Callback, context: MemoryContext):
     """Админ задаёт вопрос по заявке — запрашиваем текст вопроса."""
     payload = callback.callback.payload
@@ -185,6 +198,7 @@ async def admin_ask_question(event: MessageCreated, context: MemoryContext):
 
     data = await context.get_data()
     short_id = data.get("action_short_id")
+    user_id = str(event.message.sender.user_id)
 
     service, session = _get_request_service()
     async with session:
@@ -198,6 +212,10 @@ async def admin_ask_question(event: MessageCreated, context: MemoryContext):
         req.admin_comment = question
         req.status = "need_clarification"
         await session.commit()
+
+        service_a, session_a = _get_audit_service()
+        async with session_a:
+            await service_a.log(req.id, "clarify", user_id, details=question)
 
         await event.message.answer(
             f"❓ Вопрос по заявке {short_id} отправлен инициатору.\n"
