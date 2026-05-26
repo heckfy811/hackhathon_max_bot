@@ -2,10 +2,14 @@
 Хендлеры FSM-заполнения заявки на гостевой пропуск.
 """
 
+from datetime import datetime, timedelta, date
+
 from maxapi import Router, F
 from maxapi.types import MessageCreated
 from maxapi.types.callback import Callback
+from maxapi.types.updates.message_callback import MessageCallback
 from maxapi.context import MemoryContext, State, StatesGroup
+from maxapi_calendar import SimpleCalendar, SimpleCalendarCallback
 
 from ..keyboards import kb
 from .common import _get_user_service, _get_request_service, _get_clarification_service, _get_audit_service, _format_summary, _format_request_full
@@ -27,11 +31,21 @@ class RequestForm(StatesGroup):
 # Порядок полей и подсказки
 STEPS = [
     ("guest_name", RequestForm.guest_name, "👤 Введите ФИО гостя:"),
-    ("visit_date", RequestForm.visit_date, "📅 Введите дату визита (ДД.ММ.ГГГГ):"),
+    ("visit_date", RequestForm.visit_date, "📅 Выберите дату визита:"),
     ("visit_time", RequestForm.visit_time, "🕐 Введите время визита (например, 10:00):"),
     ("location", RequestForm.location, "🏢 Введите место (корпус/аудитория):"),
     ("purpose", RequestForm.purpose, "📝 Введите цель визита:"),
 ]
+
+
+def _get_calendar() -> SimpleCalendar:
+    """Создаёт экземпляр календаря с ограничениями по дате."""
+    cal = SimpleCalendar(locale="ru_RU")
+    today = datetime.now()
+    min_date = today + timedelta(days=1)
+    max_date = today + timedelta(days=60)
+    cal.set_dates_range(min_date, max_date)
+    return cal
 
 
 def _find_next_step(draft) -> int | None:
@@ -75,7 +89,12 @@ async def create_request_start(callback: Callback, context: MemoryContext):
         else:
             _, state, prompt = STEPS[step_index]
             await context.set_state(state)
-            await callback.message.answer(prompt, attachments=[kb.cancel_kb])
+            if state == RequestForm.visit_date:
+                cal = _get_calendar()
+                calendar_markup = await cal.start_calendar()
+                await callback.message.answer("📅 Выберите дату визита:", attachments=[calendar_markup])
+            else:
+                await callback.message.answer(prompt, attachments=[kb.cancel_kb])
 
 
 @router.message_callback(F.callback.payload == "cancel_request")
@@ -107,41 +126,19 @@ async def process_guest_name(event: MessageCreated, context: MemoryContext):
         await service.update_draft(request_id, guest_name=text)
 
     await context.set_state(RequestForm.visit_date)
-    await event.message.answer("📅 Введите дату визита (ДД.ММ.ГГГГ):", attachments=[kb.cancel_kb])
+    cal = _get_calendar()
+    calendar_markup = await cal.start_calendar()
+    await event.message.answer("📅 Выберите дату визита:", attachments=[calendar_markup])
 
 
-@router.message_created(RequestForm.visit_date)
-async def process_visit_date(event: MessageCreated, context: MemoryContext):
-    """Обработка ввода даты визита."""
-    text = event.message.body.text.strip()
-    if not text:
-        await event.message.answer("⚠️ Дата не может быть пустой. Попробуйте ещё раз:")
-        return
+@router.message_callback(SimpleCalendarCallback.filter(), RequestForm.visit_date)
+async def process_visit_date(event: MessageCallback, context: MemoryContext, payload: SimpleCalendarCallback):
+    """Обработка выбора даты визита через календарь."""
+    cal = _get_calendar()
+    selected, selected_date = await cal.process_selection(event, payload)
 
-    from datetime import datetime, timedelta, date
-
-    try:
-        parsed_date = datetime.strptime(text, "%d.%m.%Y").date()
-    except ValueError:
-        await event.message.answer("⚠️ Неверный формат даты. Используйте ДД.ММ.ГГГГ (например, 15.06.2026):")
-        return
-
-    today = date.today()
-    min_date = today + timedelta(days=1)
-    max_date = today + timedelta(days=60)
-
-    if parsed_date < min_date:
-        await event.message.answer(
-            f"⚠️ Дата визита должна быть не раньше завтрашнего дня ({min_date.strftime('%d.%m.%Y')}). "
-            "Попробуйте ещё раз:"
-        )
-        return
-
-    if parsed_date > max_date:
-        await event.message.answer(
-            f"⚠️ Дата визита не может быть позже чем через 2 месяца ({max_date.strftime('%d.%m.%Y')}). "
-            "Попробуйте ещё раз:"
-        )
+    if not selected:
+        # Пользователь навигирует по календарю или дата вне диапазона — ждём выбора
         return
 
     data = await context.get_data()
@@ -149,7 +146,7 @@ async def process_visit_date(event: MessageCreated, context: MemoryContext):
 
     service, session = _get_request_service()
     async with session:
-        await service.update_draft(request_id, visit_date=parsed_date)
+        await service.update_draft(request_id, visit_date=selected_date.date())
 
     await context.set_state(RequestForm.visit_time)
     await event.message.answer("🕐 Введите время визита (например, 10:00):", attachments=[kb.cancel_kb])
