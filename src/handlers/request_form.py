@@ -32,7 +32,7 @@ class RequestForm(StatesGroup):
 STEPS = [
     ("guest_name", RequestForm.guest_name, "👤 Введите ФИО гостя:"),
     ("visit_date", RequestForm.visit_date, "📅 Выберите дату визита:"),
-    ("visit_time", RequestForm.visit_time, "🕐 Введите время визита (например, 10:00):"),
+    ("visit_time", RequestForm.visit_time, "🕐 Выберите время визита:"),
     ("location", RequestForm.location, "🏢 Введите место (корпус/аудитория):"),
     ("purpose", RequestForm.purpose, "📝 Введите цель визита:"),
 ]
@@ -149,59 +149,25 @@ async def process_visit_date(event: MessageCallback, context: MemoryContext, pay
         await service.update_draft(request_id, visit_date=selected_date.date())
 
     await context.set_state(RequestForm.visit_time)
-    await event.message.answer("🕐 Введите время визита (например, 10:00):", attachments=[kb.cancel_kb])
+    await event.message.answer("🕐 Выберите время визита:", attachments=[kb.time_picker_kb()])
 
 
-@router.message_created(RequestForm.visit_time)
-async def process_visit_time(event: MessageCreated, context: MemoryContext):
-    """Обработка ввода времени визита."""
-    text = event.message.body.text.strip()
-    if not text:
-        await event.message.answer("⚠️ Время не может быть пустым. Попробуйте ещё раз:")
-        return
-
-    import re
-
-    if not re.match(r"^\d{1,2}:\d{2}$", text):
-        await event.message.answer(
-            "⚠️ Неверный формат времени. Используйте формат ЧЧ:ММ (например, 10:00):"
-        )
-        return
-
-    parts = text.split(":")
-    hour = int(parts[0])
-    minute = int(parts[1])
-
-    if minute < 0 or minute > 59:
-        await event.message.answer(
-            "⚠️ Некорректные минуты. Допустимые значения: 00–59. Попробуйте ещё раз:"
-        )
-        return
-
-    if hour < 8 or hour > 20:
-        await event.message.answer(
-            "⚠️ Время визита должно быть в рабочие часы (с 08:00 до 20:00). Попробуйте ещё раз:"
-        )
-        return
-
-    if hour == 20 and minute > 0:
-        await event.message.answer(
-            "⚠️ Время визита должно быть не позднее 20:00. Попробуйте ещё раз:"
-        )
-        return
-
-    # Нормализуем формат к HH:MM
-    normalized_time = f"{hour:02d}:{minute:02d}"
+@router.message_callback(F.callback.payload.startswith("pick_time:"), RequestForm.visit_time)
+async def process_visit_time(callback: Callback, context: MemoryContext):
+    """Обработка выбора времени визита через кнопки."""
+    payload = callback.callback.payload
+    # payload формат: "pick_time:HH:MM"
+    selected_time = payload.split(":", 1)[1]  # "HH:MM"
 
     data = await context.get_data()
     request_id = data.get("request_id")
 
     service, session = _get_request_service()
     async with session:
-        await service.update_draft(request_id, visit_time=normalized_time)
+        await service.update_draft(request_id, visit_time=selected_time)
 
     await context.set_state(RequestForm.location)
-    await event.message.answer("🏢 Введите место (корпус/аудитория):", attachments=[kb.cancel_kb])
+    await callback.message.answer("🏢 Введите место (корпус/аудитория):", attachments=[kb.cancel_kb])
 
 
 @router.message_created(RequestForm.location)

@@ -143,6 +143,23 @@ def user_draft_actions_kb(short_id: str):
     )
 
 
+def time_picker_kb():
+    """Клавиатура выбора времени визита с интервалом 30 минут (08:00–19:30)."""
+    builder = InlineKeyboardBuilder()
+    for hour in range(8, 20):
+        builder.row(
+            CallbackButton(
+                text=f"{hour:02d}:00",
+                payload=f"pick_time:{hour:02d}:00"
+            ),
+            CallbackButton(
+                text=f"{hour:02d}:30",
+                payload=f"pick_time:{hour:02d}:30"
+            ),
+        )
+    return builder.as_markup()
+
+
 def user_clarification_kb(short_id: str):
     """Действия пользователя при запросе уточнения: ответить или отменить заявку."""
     return (
