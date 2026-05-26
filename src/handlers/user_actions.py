@@ -80,6 +80,36 @@ async def user_cancel_request(callback: Callback):
             )
 
 
+# ── Сброс черновика заявки ─────────────────────────────────────────────────────
+
+@router.message_callback(F.callback.payload.startswith("reset_draft:"))
+async def user_reset_draft(callback: Callback):
+    """Пользователь сбрасывает (удаляет) черновик заявки."""
+    user = callback.callback.user
+    user_id = str(user.user_id)
+
+    payload = callback.callback.payload
+    short_id = payload.split(":", 1)[1]
+
+    service_r, session_r = _get_request_service()
+    async with session_r:
+        req = await service_r.get_by_short_id(short_id)
+        if not req:
+            await callback.message.answer("⚠️ Заявка не найдена.", attachments=[kb.user_menu_kb])
+            return
+        try:
+            await service_r.delete_draft(str(req.id))
+            await callback.message.answer(
+                f"🗑 Черновик заявки {short_id} удалён.",
+                attachments=[kb.user_menu_kb]
+            )
+        except ValueError as e:
+            await callback.message.answer(
+                f"⚠️ Не удалось сбросить заявку: {e}",
+                attachments=[kb.user_menu_kb]
+            )
+
+
 # ── Ответ на уточняющий вопрос от админа ─────────────────────────────────────
 
 @router.message_callback(F.callback.payload.startswith("answer_clarification:"))

@@ -126,6 +126,23 @@ def user_request_actions_kb(short_id: str):
     )
 
 
+def user_draft_actions_kb(short_id: str):
+    """Действия пользователя над черновиком: сброс."""
+    return (
+        InlineKeyboardBuilder()
+        .row(
+            CallbackButton(
+                text="🗑 Сброс заявки",
+                payload=f"reset_draft:{short_id}"
+            )
+        )
+        .row(
+            CallbackButton(text="↩️ К списку заявок", payload="my_requests")
+        )
+        .as_markup()
+    )
+
+
 def user_clarification_kb(short_id: str):
     """Действия пользователя при запросе уточнения: ответить или отменить заявку."""
     return (

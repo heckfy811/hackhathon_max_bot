@@ -300,7 +300,7 @@ async def view_request(callback: Callback, context: MemoryContext):
         await callback.message.answer("⚠️ Заявка не найдена.", attachments=[kb.user_menu_kb])
         return
 
-    text = _format_request_full(req)
+    text = await _format_request_full(req)
 
     # Определяем роль пользователя
     service_u, session_u = _get_user_service()
@@ -320,7 +320,11 @@ async def view_request(callback: Callback, context: MemoryContext):
             )
     else:
         # Пользователь может отменить только pending-заявку
-        if req.status == "pending":
+        if req.status == "draft":
+            await callback.message.answer(
+                text, attachments=[kb.user_draft_actions_kb(short_id)]
+            )
+        elif req.status == "pending":
             await callback.message.answer(
                 text, attachments=[kb.user_request_actions_kb(short_id)]
             )
