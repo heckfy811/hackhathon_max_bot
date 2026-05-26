@@ -118,11 +118,30 @@ async def process_visit_date(event: MessageCreated, context: MemoryContext):
         await event.message.answer("⚠️ Дата не может быть пустой. Попробуйте ещё раз:")
         return
 
-    from datetime import datetime
+    from datetime import datetime, timedelta, date
+
     try:
         parsed_date = datetime.strptime(text, "%d.%m.%Y").date()
     except ValueError:
         await event.message.answer("⚠️ Неверный формат даты. Используйте ДД.ММ.ГГГГ (например, 15.06.2026):")
+        return
+
+    today = date.today()
+    min_date = today + timedelta(days=1)
+    max_date = today + timedelta(days=60)
+
+    if parsed_date < min_date:
+        await event.message.answer(
+            f"⚠️ Дата визита должна быть не раньше завтрашнего дня ({min_date.strftime('%d.%m.%Y')}). "
+            "Попробуйте ещё раз:"
+        )
+        return
+
+    if parsed_date > max_date:
+        await event.message.answer(
+            f"⚠️ Дата визита не может быть позже чем через 2 месяца ({max_date.strftime('%d.%m.%Y')}). "
+            "Попробуйте ещё раз:"
+        )
         return
 
     data = await context.get_data()
@@ -144,12 +163,45 @@ async def process_visit_time(event: MessageCreated, context: MemoryContext):
         await event.message.answer("⚠️ Время не может быть пустым. Попробуйте ещё раз:")
         return
 
+    import re
+
+    if not re.match(r"^\d{1,2}:\d{2}$", text):
+        await event.message.answer(
+            "⚠️ Неверный формат времени. Используйте формат ЧЧ:ММ (например, 10:00):"
+        )
+        return
+
+    parts = text.split(":")
+    hour = int(parts[0])
+    minute = int(parts[1])
+
+    if minute < 0 or minute > 59:
+        await event.message.answer(
+            "⚠️ Некорректные минуты. Допустимые значения: 00–59. Попробуйте ещё раз:"
+        )
+        return
+
+    if hour < 8 or hour > 20:
+        await event.message.answer(
+            "⚠️ Время визита должно быть в рабочие часы (с 08:00 до 20:00). Попробуйте ещё раз:"
+        )
+        return
+
+    if hour == 20 and minute > 0:
+        await event.message.answer(
+            "⚠️ Время визита должно быть не позднее 20:00. Попробуйте ещё раз:"
+        )
+        return
+
+    # Нормализуем формат к HH:MM
+    normalized_time = f"{hour:02d}:{minute:02d}"
+
     data = await context.get_data()
     request_id = data.get("request_id")
 
     service, session = _get_request_service()
     async with session:
-        await service.update_draft(request_id, visit_time=text)
+        await service.update_draft(request_id, visit_time=normalized_time)
 
     await context.set_state(RequestForm.location)
     await event.message.answer("🏢 Введите место (корпус/аудитория):", attachments=[kb.cancel_kb])
@@ -248,7 +300,7 @@ async def view_request(callback: Callback, context: MemoryContext):
         await callback.message.answer("⚠️ Заявка не найдена.", attachments=[kb.user_menu_kb])
         return
 
-    text = await _format_request_full(req)
+    text = _format_request_full(req)
 
     # Определяем роль пользователя
     service_u, session_u = _get_user_service()
