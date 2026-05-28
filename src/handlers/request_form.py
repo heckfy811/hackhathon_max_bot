@@ -9,7 +9,7 @@ from maxapi.types import MessageCreated
 from maxapi.types.callback import Callback
 from maxapi.types.updates.message_callback import MessageCallback
 from maxapi.context import MemoryContext, State, StatesGroup
-from maxapi_calendar import SimpleCalendar, SimpleCalendarCallback
+from maxapi_calendar import SimpleCalendar, SimpleCalendarCallback, SimpleCalAct
 
 from ..keyboards import kb
 from .common import _get_user_service, _get_request_service, _get_clarification_service, _get_audit_service, _format_summary, _format_request_full
@@ -134,6 +134,16 @@ async def process_guest_name(event: MessageCreated, context: MemoryContext):
 @router.message_callback(SimpleCalendarCallback.filter(), RequestForm.visit_date)
 async def process_visit_date(event: MessageCallback, context: MemoryContext, payload: SimpleCalendarCallback):
     """Обработка выбора даты визита через календарь."""
+    # При нажатии «Отмена» в календаре — отменяем заполнение заявки
+    if payload.act_enum == SimpleCalAct.cancel:
+        await context.clear()
+        await event.message.answer(
+            "↩️ Заполнение приостановлено. Черновик сохранён.\n"
+            "Вы можете продолжить позже, нажав «Заполнение заявки».",
+            attachments=[kb.user_menu_kb]
+        )
+        return
+
     cal = _get_calendar()
     selected, selected_date = await cal.process_selection(event, payload)
 
