@@ -8,6 +8,8 @@ from sqlalchemy import text as sa_text
 
 from src.handlers.dp import dp
 from src.database.db import engine
+from src.middleware import AuthMiddleware
+from src.database.db import AsyncSessionFactory
 
 load_dotenv()
 
@@ -21,6 +23,9 @@ async def main():
     async with engine.connect() as conn:
         await conn.execute(sa_text("SELECT 1"))
     logging.info("Подключение к базе данных установлено")
+
+    dp.update.middleware(AuthMiddleware(AsyncSessionFactory))
+    logging.info("AuthMiddleware подключён")
 
     # Инициализация бота
     bot = Bot(token=os.getenv("BOT_TOKEN"))
