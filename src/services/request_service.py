@@ -79,7 +79,7 @@ class RequestService:
 
     async def cancel(self, request_id: str) -> Request:
         request = await self.request_repo.get(request_id)
-        if not request or request.status != "pending":
+        if not request or request.status == "draft":
             raise ValueError("Only pending request can be cancelled")
 
         request.status = "closed"
